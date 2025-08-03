@@ -52,14 +52,17 @@
           '';
 
           # Icon (comfyui.png lives next to this flake)
-          iconPkg = pkgs.stdenv.mkDerivation {
-            pname = "comfyui-icon"; version = "1";
-            src   = ./comfyui.png;
-            dontBuild = true;
-            installPhase = ''
-              install -Dm644 $src \
-                $out/share/icons/hicolor/512x512/apps/comfyui.png
-            '';
+          pname   = "comfyui-icon";
+          version = "1";
+          src     = ./comfyui.png;
+
+          dontUnpack = true;      # ← stop trying to untar a PNG
+          dontBuild  = true;
+
+          installPhase = ''
+            install -Dm644 $src \
+            $out/share/icons/hicolor/512x512/apps/comfyui.png
+          '';
           };
 
           desktop = pkgs.makeDesktopItem {
