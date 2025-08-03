@@ -24,7 +24,7 @@
 
           # Python env ComfyUI wants
           pyEnv = pkgs.python312.withPackages (ps: [
-            pkgs.pytorchWithCuda
+            ps.pytorchWithCuda
             ps.diffusers
             ps.safetensors
             ps.opencv-python-headless
