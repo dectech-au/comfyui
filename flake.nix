@@ -12,12 +12,12 @@
 
   outputs = { self, nixpkgs, flake-utils, src }:
     let
-      # overlay: alias torch → pytorch-bin
+      # overlay: alias torch → torch-bin
       torchBinOverlay = final: prev: {
         python311Packages = prev.python311Packages // {
-          torch        = prev.python311Packages."pytorch-bin";
+          torch        = prev.python311Packages."torch-bin";
           # keep the CUDA-enabled variant visible under both names
-          "pytorch-bin" = prev.python311Packages."pytorch-bin";
+          "pytorch-bin" = prev.python311Packages."torch-bin";
         };
       };
 
@@ -35,7 +35,7 @@
       };
 
       pyEnv = pkgs.python311.withPackages (ps: with ps; [
-        (ps."pytorch-bin")  # binary wheel provides import torch
+        (ps."torch-bin")  # binary wheel provides import torch
         diffusers safetensors opencv-python-headless
         setuptools pip
       ]);
