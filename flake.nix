@@ -13,34 +13,32 @@
 
   outputs = { self, nixpkgs, flake-utils, src }:
     let
-      # ----------------------------------------------------------------------------
-      # 1.  Overlay that *replaces* torch with the official wheel
-      # ----------------------------------------------------------------------------
-      torchOverlay = final: prev:
-        let
-          py = prev.python311;   # keep it readable
-          torchWheel = py.buildPythonPackage rec {
-            pname   = "torch";
-            version = "2.7.1+cu121";           # CUDA 12.1 wheel
-            format  = "wheel";
-
-            src = prev.fetchurl {
-              url  =
-                "https://download.pytorch.org/whl/cu121/torch-2.7.1%2Bcu121-cp311-cp311-linux_x86_64.whl";
-              hash = "sha256-Vf+uL6bDS60AhbUlRi1eEM57x8rXnD96/7l2PG0w8Kw=";
-            };
-
-            nativeBuildInputs = [ py.pkgs.setuptools ];
-            propagatedBuildInputs = [ prev.cudaPackages.cudatoolkit ];
-          };
-        in
-        {
-          python311Packages = prev.python311Packages // {
-            torch          = torchWheel;
-            "torch-bin"    = torchWheel;
-            torchWithCuda  = torchWheel;
-          };
+  # ----------------------------------------------------------------------------
+  # 1.  Overlay that replaces *all* PyTorch names with the CUDA wheel
+  # ----------------------------------------------------------------------------
+  torchOverlay = final: prev:
+    let
+      py = prev.python311;
+      torchWheel = py.buildPythonPackage rec {
+        pname   = "torch";
+        version = "2.7.1+cu121";
+        format  = "wheel";
+        src = prev.fetchurl {
+          url  = "https://download.pytorch.org/whl/cu121/torch-2.7.1%2Bcu121-cp311-cp311-linux_x86_64.whl";
+          hash = "sha256-Vf+uL6bDS60AhbUlRi1eEM57x8rXnD96/7l2PG0w8Kw=";
         };
+        nativeBuildInputs      = [ py.pkgs.setuptools ];
+        propagatedBuildInputs  = [ prev.cudaPackages.cudatoolkit ];
+      };
+    in {
+      python311Packages = prev.python311Packages // {
+        torch            = torchWheel;   # import torch
+        pytorch          = torchWheel;   # nixpkgs name used by diffusers
+        "torch-bin"      = torchWheel;   # keep explicit alias
+        pytorchWithCuda  = torchWheel;   # belt-and-suspenders
+      };
+    };
+
 
       # ----------------------------------------------------------------------------
       # 2.  NixOS module
