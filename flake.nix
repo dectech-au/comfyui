@@ -1,9 +1,10 @@
 {
-  description = "Native ComfyUI package (CUDA, low-VRAM flags) + desktop entry";
+  description = "ComfyUI (CUDA, low-VRAM) with a zero-compile PyTorch wheel";
 
   inputs = {
-    nixpkgs     .url = "github:NixOS/nixpkgs/release-24.05";
-    flake-utils .url = "github:numtide/flake-utils";
+    nixpkgs.url     = "github:NixOS/nixpkgs/release-24.05";
+    flake-utils.url = "github:numtide/flake-utils";
+
     src = {
       url   = "github:comfyanonymous/ComfyUI";
       flake = false;
@@ -12,30 +13,57 @@
 
   outputs = { self, nixpkgs, flake-utils, src }:
     let
-      # overlay: alias torch → torch-bin
-      torchBinOverlay = final: prev: {
-        python311Packages = prev.python311Packages // {
-          torch        = prev.python311Packages."torch-bin";
-          # keep the CUDA-enabled variant visible under both names
-          "pytorch-bin" = prev.python311Packages."torch-bin";
-        };
-      };
+      # ----------------------------------------------------------------------------
+      # 1.  Overlay that *replaces* torch with the official wheel
+      # ----------------------------------------------------------------------------
+      torchOverlay = final: prev:
+        let
+          py = prev.python311;   # keep it readable
+          torchWheel = py.buildPythonPackage rec {
+            pname   = "torch";
+            version = "2.7.1+cu121";           # CUDA 12.1 wheel
+            format  = "wheel";
 
+            src = prev.fetchurl {
+              url  =
+                "https://download.pytorch.org/whl/cu121/torch-2.7.1%2Bcu121-cp311-cp311-linux_x86_64.whl";
+              hash = "sha256-Vf+uL6bDS60AhbUlRi1eEM57x8rXnD96/7l2PG0w8Kw=";
+            };
+
+            nativeBuildInputs = [ py.pkgs.setuptools ];
+            propagatedBuildInputs = [ prev.cudaPackages.cudatoolkit ];
+          };
+        in
+        {
+          python311Packages = prev.python311Packages // {
+            torch          = torchWheel;
+            "torch-bin"    = torchWheel;
+            torchWithCuda  = torchWheel;
+          };
+        };
+
+      # ----------------------------------------------------------------------------
+      # 2.  NixOS module
+      # ----------------------------------------------------------------------------
       nixosMod = { pkgs, ... }: {
-        environment.systemPackages = [ self.packages.${pkgs.system}.default ];
+        environment.systemPackages =
+          [ self.packages.${pkgs.system}.default ];
       };
     in
 
+    # ----------------------------------------------------------------------------
+    # 3.  Per-system outputs
+    # ----------------------------------------------------------------------------
     flake-utils.lib.eachDefaultSystem (system:
     let
       pkgs = import nixpkgs {
         inherit system;
-        overlays = [ torchBinOverlay ];
-        config = { allowUnfree = true; cudaSupport = true; };
+        overlays = [ torchOverlay ];
+        config   = { allowUnfree = true; cudaSupport = true; };
       };
 
       pyEnv = pkgs.python311.withPackages (ps: with ps; [
-        (ps."torch-bin")  # binary wheel provides import torch
+        torch     # resolves to wheel we just injected
         diffusers safetensors opencv-python-headless
         setuptools pip
       ]);
@@ -58,11 +86,10 @@
       '';
 
       iconPkg = pkgs.stdenv.mkDerivation {
-        pname   = "comfyui-icon";
+        pname = "comfyui-icon";
         version = "1";
-        src     = ./comfyui.png;
+        src = ./comfyui.png;
         dontUnpack = true;
-        dontBuild  = true;
         installPhase = ''
           install -Dm644 "$src" "$out/share/icons/hicolor/512x512/apps/comfyui.png"
         '';
