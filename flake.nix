@@ -5,7 +5,7 @@
     nixpkgs     .url = "github:NixOS/nixpkgs/release-24.05";
     flake-utils .url = "github:numtide/flake-utils";
 
-    # Upstream source – plain git, not a flake
+    # Upstream source, plain git
     src = {
       url   = "github:comfyanonymous/ComfyUI";
       flake = false;
@@ -13,6 +13,13 @@
   };
 
   outputs = { self, nixpkgs, flake-utils, src }:
+    let
+      # top-level NixOS module, must sit outside eachDefaultSystem
+      nixosMod = { pkgs, ... }: {
+        environment.systemPackages = [ self.packages.${pkgs.system}.default ];
+      };
+    in
+
     flake-utils.lib.eachDefaultSystem (system:
     let
       pkgs = import nixpkgs {
@@ -20,32 +27,27 @@
         config = { allowUnfree = true; cudaSupport = true; };
       };
 
-      # Python env — stay on 3.11 until CUDA wheels land for 3.12
+      # stay on Python 3.11; CUDA wheels for 3.12 are not stable yet
       pyEnv = pkgs.python311.withPackages (ps: [
-        ps.pytorch-bin               # CUDA-enabled wheel
+        ps.pytorch-bin
         ps.diffusers
         ps.safetensors
         ps.opencv-python-headless
         ps.setuptools ps.pip
       ]);
 
-      # Runtime wrapper
       runComfy = pkgs.writeShellScriptBin "run-comfy" ''
         set -euo pipefail
-        # Flip GPU to exclusive mode if NVIDIA is present
+
         if command -v nvidia-smi >/dev/null 2>&1; then
-          if ! nvidia-smi -q | grep -q Exclusive; then
-            sudo nvidia-smi -i 0 -c EXCLUSIVE_PROCESS || true
-          fi
+          nvidia-smi -i 0 -c EXCLUSIVE_PROCESS || true
+          export LD_LIBRARY_PATH="${pkgs.cudaPackages.cudatoolkit}/lib64:$LD_LIBRARY_PATH"
         fi
 
         export WINIT_UNIX_NO_PORTAL=1
         export __GL_FRAMEBUFFER_SRGB_CAPABLE=1
         export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:64
         export COMFYUI_PORT=8188
-
-        # Ensure CUDA libs show up at runtime
-        export LD_LIBRARY_PATH="${pkgs.cudaPackages.cudatoolkit}/lib64:$LD_LIBRARY_PATH"
 
         cd ${src}
         exec ${pyEnv}/bin/python main.py \
@@ -54,15 +56,12 @@
           --reserve-vram 512 --disable-smart-memory
       '';
 
-      # Icon (expects comfyui.png next to this flake)
       iconPkg = pkgs.stdenv.mkDerivation {
         pname   = "comfyui-icon";
         version = "1";
         src     = ./comfyui.png;
-
         dontUnpack = true;
         dontBuild  = true;
-
         installPhase = ''
           install -Dm644 "$src" \
             "$out/share/icons/hicolor/512x512/apps/comfyui.png"
@@ -87,14 +86,13 @@
     {
       packages = rec {
         default  = comfyPkg;
-        comfyui  = comfyPkg;   # alias
+        comfyui  = comfyPkg;
         runComfy = runComfy;
       };
 
       apps.default = flake-utils.lib.mkApp { drv = runComfy; };
-
-      nixosModules.default = { pkgs, ... }: {
-        environment.systemPackages = [ self.packages.${pkgs.system}.default ];
-      };
-    });
+    })
+    // {
+      nixosModules.default = nixosMod;
+    };
 }
